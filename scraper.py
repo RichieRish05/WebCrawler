@@ -67,7 +67,6 @@ def extract_next_links(url, resp):
 
     # Parse the content of the response
     html = resp.raw_response.content
-    content_length = int(resp.raw_response.headers.get("Content-Length", 0))
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text(separator=" ")
     words = [w for w in tokenize(text) if w not in STOPWORDS]
@@ -78,7 +77,7 @@ def extract_next_links(url, resp):
     elif word_count < 300 and content_length > MAX_SIZE:
         return links
 
-    TOTAL_UNIQUE_PAGES.add(url)
+    TOTAL_UNIQUE_PAGES.add(resp.raw_response.url)
     WORD_FREQUENCIES.update(words)
     if word_count > LONGEST_PAGE["word_count"]:
         LONGEST_PAGE["url"] = url
@@ -92,7 +91,8 @@ def extract_next_links(url, resp):
             absolute_url = urljoin(resp.raw_response.url or url, raw)
         except ValueError:
             continue
-        clean_url, _ = normalize(urldefrag(absolute_url))
+        clean_url, _ = urldefrag(absolute_url)
+        clean_url = normalize(clean_url)
         links.append(clean_url)
 
     return list(set(links))
@@ -184,13 +184,6 @@ def valid_query(parsed):
 
 
 def generate_report(filename="report.txt"):
-    filtered = Counter(
-        {
-            word: count
-            for word, count in WORD_FREQUENCIES.items()
-            if word not in STOPWORDS
-        }
-    )
     # getting all values to ensure consistency
     longest_url = LONGEST_PAGE["url"]
     longest_wc = LONGEST_PAGE["word_count"]
@@ -202,7 +195,7 @@ def generate_report(filename="report.txt"):
         file.write(f"Longest word count url: {longest_url}\n")
         file.write(f"Longest word count: {longest_wc}\n")
 
-        for word, count in filtered.most_common(50):
+        for word, count in WORD_FREQUENCIES.most_common(50):
             file.write(f"{word}: {count}\n")
 
         file.write(f"Total subdomains: {len(all_subdomains)}\n")
