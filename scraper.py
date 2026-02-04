@@ -65,9 +65,6 @@ def is_valid(url):
         if parsed.netloc and not any(parsed.netloc.endswith(domain) for domain in allowed_domains):
             return False
     
-        # Limit query parameters to at most 2
-        if parsed.query.count("&") > 1:
-            return False
         # Block fragments
         if parsed.fragment:
             return False
