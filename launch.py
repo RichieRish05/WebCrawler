@@ -13,6 +13,7 @@ from argparse import ArgumentParser
 from utils.server_registration import get_cache_server
 from utils.config import Config
 from crawler import Crawler
+from scraper import generate_report
 
 
 def main(config_file, restart):
@@ -22,6 +23,7 @@ def main(config_file, restart):
     config.cache_server = get_cache_server(config, restart)
     crawler = Crawler(config, restart)
     crawler.start()
+    generate_report()
 
 
 if __name__ == "__main__":

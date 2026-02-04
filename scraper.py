@@ -2,10 +2,11 @@ import re
 from urllib.parse import parse_qs, urldefrag, urljoin, urlparse
 from bs4 import BeautifulSoup
 from collections import defaultdict, Counter
+from utils import normalize
 
 DOKU_MEDIA_PARAMS = {"do", "tab_files", "tab_details", "image", "ns"}
 
-STOPWORDS = {
+STOPWORDS = [
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
     "any", "are", "aren't", "as", "at", "be", "because", "been", "before",
     "being", "below", "between", "both", "but", "by", "can't", "cannot", "could",
@@ -26,7 +27,7 @@ STOPWORDS = {
     "when's", "where", "where's", "which", "while", "who", "who's", "whom",
     "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd",
     "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves"
-}
+]
 
 
 MAX_SIZE = 1_000_000
@@ -66,20 +67,15 @@ def extract_next_links(url, resp):
 
     # Parse the content of the response
     html = resp.raw_response.content
+    content_length = int(resp.raw_response.headers.get("Content-Length", 0))
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text(separator=" ")
     words = [w for w in tokenize(text) if w not in STOPWORDS]
     word_count = len(words)
-    WORD_COUNTS.update(words)
-    TOTAL_UNIQUE_PAGES.add(resp.url)
-    if word_count > LONGEST_PAGE["word_count"]:
-        LONGEST_PAGE["url"] = resp.url
-        LONGEST_PAGE["word_count"] = word_count
 
-    word_count = len(words)
     if word_count < 100:
         return links
-    elif word_count < 300 and len(html) > MAX_SIZE:
+    elif word_count < 300 and content_length > MAX_SIZE:
         return links
 
     TOTAL_UNIQUE_PAGES.add(url)
@@ -96,7 +92,7 @@ def extract_next_links(url, resp):
             absolute_url = urljoin(resp.raw_response.url or url, raw)
         except ValueError:
             continue
-        clean_url, _ = urldefrag(absolute_url)
+        clean_url, _ = normalize(urldefrag(absolute_url))
         links.append(clean_url)
 
     return list(set(links))
@@ -130,10 +126,6 @@ def is_valid(url):
 
         if not (
             any(host.endswith(domain) for domain in allowed_domains)
-            or (
-                host.endswith("today.uci.edu")
-                and parsed.path.startswith("/department/information_computer_sciences")
-            )
         ):
             return False
 
@@ -179,7 +171,9 @@ def valid_query(parsed):
 
     if any(k in DOKU_MEDIA_PARAMS for k in q.keys()):
         return False
-    if len(q) > 100:
+    if len(q) > 5:
+        return False
+    if parsed.path.count("/") > 10:
         return False
 
     for key in q:
