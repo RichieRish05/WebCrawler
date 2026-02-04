@@ -1,3 +1,12 @@
+import multiprocessing
+# Set multiprocessing start method to 'fork' for compatibility with spacetime on macOS
+# This must be done before any imports that use multiprocessing
+try:
+    multiprocessing.set_start_method('fork')
+except (RuntimeError, ValueError):
+    # Start method already set or 'fork' not available, ignore
+    pass
+
 from configparser import ConfigParser
 from argparse import ArgumentParser
 

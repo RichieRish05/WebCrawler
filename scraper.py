@@ -1,5 +1,7 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
+from bs4 import BeautifulSoup
+from utils import normalize
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -15,7 +17,39 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    return list()
+
+    # First, we check if the response is valid
+    if resp.status != 200 or resp.error:
+        return []
+    # Check if we have a valid raw_response
+    if not resp.raw_response or not resp.raw_response.content:
+        return []
+
+    # Parse the content of the response
+    soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+    # Find all the links in the content
+    links = soup.find_all('a')
+ 
+    base_url = resp.url
+    # Extract hrefs and convert relative URLs to absolute URLs
+    extracted_links = []
+    for link in links:
+        href = link.get('href')
+        if href:
+            # Skip non-http links
+            if href.startswith(('javascript:', 'mailto:', 'tel:', '#')):
+                continue
+            # Convert relative URLs to absolute URLs
+            absolute_url = urljoin(base_url, href)
+            # Normalize fragments
+            if '#' in absolute_url:
+                absolute_url = absolute_url.split('#')[0]
+            # Remove trailing slashes
+            normalized_url = normalize(absolute_url)
+            extracted_links.append(normalized_url)
+            
+    # Return the list of extracted links
+    return extracted_links
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -23,8 +57,22 @@ def is_valid(url):
     # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
-        if parsed.scheme not in set(["http", "https"]):
+        if parsed.scheme not in ["http", "https"]:
             return False
+        
+        # Filter out URLs that are not within the allowed UCI domains
+        allowed_domains = ("ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu")
+        if parsed.netloc and not any(parsed.netloc.endswith(domain) for domain in allowed_domains):
+            return False
+    
+        # Limit query parameters to at most 2
+        if parsed.query.count("&") > 1:
+            return False
+        # Block fragments
+        if parsed.fragment:
+            return False
+        
+        # Filter out URLs with file extensions that don't point to webpages
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
