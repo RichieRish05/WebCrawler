@@ -73,7 +73,7 @@ def hamming_distance(h1: int, h2: int) -> int:
     return bin(h1 ^ h2).count('1')
 
 
-def is_near_duplicate(new_hash: int, threshold: int = 3) -> bool:
+def is_near_duplicate(new_hash: int, threshold: int = 5) -> bool:
     """Check if new_hash is within threshold Hamming distance of any seen hash."""
     for seen_hash in SIMHASHES:
         if hamming_distance(new_hash, seen_hash) <= threshold:
@@ -228,7 +228,7 @@ def valid_query(parsed):
 
     if any(k in DOKU_MEDIA_PARAMS for k in q.keys()):
         return False
-    if len(q) > 5:
+    if len(q) > 100:
         return False
     if parsed.path.count("/") > 10:
         return False
