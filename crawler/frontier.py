@@ -15,16 +15,22 @@ class Frontier(object):
         self.to_be_downloaded = list()
         self.lock = RLock()
 
-        if not os.path.exists(self.config.save_file) and not restart:
+        # dbm.dumb creates .bak, .dat, .dir files
+        save_file_exists = os.path.exists(f"{self.config.save_file}.dir")
+
+        if not save_file_exists and not restart:
             # Save file does not exist, but request to load save.
             self.logger.info(
                 f"Did not find save file {self.config.save_file}, "
                 f"starting from seed.")
-        elif os.path.exists(self.config.save_file) and restart:
+        elif save_file_exists and restart:
             # Save file does exists, but request to start from seed.
             self.logger.info(
                 f"Found save file {self.config.save_file}, deleting it.")
-            os.remove(self.config.save_file)
+            for ext in ['.bak', '.dat', '.dir']:
+                path = f"{self.config.save_file}{ext}"
+                if os.path.exists(path):
+                    os.remove(path)
         # Load existing save file, or create one if it does not exist.
         # Use dbm.dumb to avoid Python 3.13 SQLite threading issues
         self.save = shelve.Shelf(dbm.dumb.open(self.config.save_file, 'c'))
