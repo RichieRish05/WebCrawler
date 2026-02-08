@@ -115,9 +115,7 @@ def extract_next_links(url, resp):
     words = [w for w in tokenize(text) if w not in STOPWORDS]
     word_count = len(words)
 
-    if word_count < 100:
-        return links
-    elif word_count < 300 and len(html) > MAX_SIZE:
+    if word_count < 50:
         return links
 
     # Exact duplicate detection
@@ -126,11 +124,11 @@ def extract_next_links(url, resp):
         return links  # Skip exact duplicate
     CONTENT_HASHES.add(content_hash)
 
-    # Near-duplicate detection using simhash
-    page_simhash = compute_simhash(words)
-    if is_near_duplicate(page_simhash):
-        return links  # Skip near-duplicate
-    SIMHASHES.append(page_simhash)
+    # Near-duplicate detection using simhash (disabled for testing)
+    # page_simhash = compute_simhash(words)
+    # if is_near_duplicate(page_simhash):
+    #     return links  # Skip near-duplicate
+    # SIMHASHES.append(page_simhash)
 
     TOTAL_UNIQUE_PAGES.add(resp.raw_response.url)
     WORD_FREQUENCIES.update(words)
@@ -171,8 +169,17 @@ def is_valid(url):
             return False
         if (
             "timeline" in parsed.path.lower()
+            or "ml/datasets" in parsed.path.lower()
+            or "/events/" in parsed.path.lower()
+            or "tribe" in parsed.path.lower()
+            or "tribe" in parsed.query.lower()
+            or "wp-login" in parsed.path.lower()
+            or "ical" in parsed.path.lower()
+            or "eppstein/pix" in parsed.path.lower()
+            or "doku.php" in parsed.path.lower()
             or re.search(r"/\d{4}/\d{2}/\d{2}", parsed.path)
-            or re.search(r"/\d{4}-\d{2}-\d{2}", parsed.path)
+            or re.search(r"/day/\d{4}-\d{2}-\d{2}", parsed.path)
+            or re.search(r"/\d{4}-\d{2}$", parsed.path)
             or re.search(r"date=\d{4}-\d{2}-\d{2}", parsed.query)
         ):
             return False
@@ -229,8 +236,6 @@ def valid_query(parsed):
     if any(k in DOKU_MEDIA_PARAMS for k in q.keys()):
         return False
     if len(q) > 100:
-        return False
-    if parsed.path.count("/") > 10:
         return False
 
     for key in q:
