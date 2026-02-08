@@ -6,7 +6,7 @@ from utils import normalize
 
 DOKU_MEDIA_PARAMS = {"do", "tab_files", "tab_details", "image", "ns"}
 
-STOPWORDS = [
+STOPWORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
     "any", "are", "aren't", "as", "at", "be", "because", "been", "before",
     "being", "below", "between", "both", "but", "by", "can't", "cannot", "could",
@@ -27,7 +27,7 @@ STOPWORDS = [
     "when's", "where", "where's", "which", "while", "who", "who's", "whom",
     "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd",
     "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves"
-]
+}
 
 
 MAX_SIZE = 1_000_000
@@ -36,6 +36,49 @@ SUBDOMAIN_PAGE_COUNT = defaultdict(set)
 WORD_FREQUENCIES = Counter()
 TOTAL_UNIQUE_PAGES = set()
 LONGEST_PAGE = {"url": None, "word_count": 0}
+CONTENT_HASHES: set[int] = set()  # For exact duplicate detection
+SIMHASHES: list[int] = []  # For near-duplicate detection
+
+
+def djb2_hash(text: str) -> int:
+    """DJB2 hash for exact duplicate detection.
+    Source: "https://mojoauth.com/hashing/bernsteins-hash-djb2-in-python#advantages-and-disadvantages-of-bernsteins-hash-djb2"
+    """
+    hash_value = 5381
+    for char in text:
+        hash_value = ((hash_value << 5) + hash_value) + ord(char)
+    return hash_value & 0xFFFFFFFFFFFFFFFF
+
+
+def compute_simhash(tokens: list[str]) -> int:
+    """Compute 64-bit simhash fingerprint with frequency weighting."""
+    v = [0] * 64
+    for token in tokens:
+        token_hash = djb2_hash(token)
+        for i in range(64):
+            if token_hash & (1 << i):
+                v[i] += 1
+            else:
+                v[i] -= 1
+
+    fingerprint = 0
+    for i in range(64):
+        if v[i] > 0:
+            fingerprint |= (1 << i)
+    return fingerprint
+
+
+def hamming_distance(h1: int, h2: int) -> int:
+    """Count differing bits between two hashes."""
+    return bin(h1 ^ h2).count('1')
+
+
+def is_near_duplicate(new_hash: int, threshold: int = 5) -> bool:
+    """Check if new_hash is within threshold Hamming distance of any seen hash."""
+    for seen_hash in SIMHASHES:
+        if hamming_distance(new_hash, seen_hash) <= threshold:
+            return True
+    return False
 
 
 def scraper(url, resp):
@@ -67,7 +110,6 @@ def extract_next_links(url, resp):
 
     # Parse the content of the response
     html = resp.raw_response.content
-    content_length = int(resp.raw_response.headers.get("Content-Length", 0))
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text(separator=" ")
     words = [w for w in tokenize(text) if w not in STOPWORDS]
@@ -75,13 +117,25 @@ def extract_next_links(url, resp):
 
     if word_count < 100:
         return links
-    elif word_count < 300 and content_length > MAX_SIZE:
+    elif word_count < 300 and len(html) > MAX_SIZE:
         return links
 
-    TOTAL_UNIQUE_PAGES.add(url)
+    # Exact duplicate detection
+    content_hash = djb2_hash(text)
+    if content_hash in CONTENT_HASHES:
+        return links  # Skip exact duplicate
+    CONTENT_HASHES.add(content_hash)
+
+    # Near-duplicate detection using simhash
+    page_simhash = compute_simhash(words)
+    if is_near_duplicate(page_simhash):
+        return links  # Skip near-duplicate
+    SIMHASHES.append(page_simhash)
+
+    TOTAL_UNIQUE_PAGES.add(resp.raw_response.url)
     WORD_FREQUENCIES.update(words)
     if word_count > LONGEST_PAGE["word_count"]:
-        LONGEST_PAGE["url"] = url
+        LONGEST_PAGE["url"] = resp.raw_response.url
         LONGEST_PAGE["word_count"] = word_count
 
     for a_tag in soup.find_all("a", href=True):
@@ -92,7 +146,8 @@ def extract_next_links(url, resp):
             absolute_url = urljoin(resp.raw_response.url or url, raw)
         except ValueError:
             continue
-        clean_url, _ = normalize(urldefrag(absolute_url))
+        clean_url, _ = urldefrag(absolute_url)
+        clean_url = normalize(clean_url)
         links.append(clean_url)
 
     return list(set(links))
@@ -117,6 +172,7 @@ def is_valid(url):
         if (
             "timeline" in parsed.path.lower()
             or re.search(r"/\d{4}/\d{2}/\d{2}", parsed.path)
+            or re.search(r"/\d{4}-\d{2}-\d{2}", parsed.path)
             or re.search(r"date=\d{4}-\d{2}-\d{2}", parsed.query)
         ):
             return False
@@ -167,11 +223,12 @@ def valid_query(parsed):
         "h",
         "hb",
         "sf",
+        "outlook-ical"
     }
 
     if any(k in DOKU_MEDIA_PARAMS for k in q.keys()):
         return False
-    if len(q) > 5:
+    if len(q) > 100:
         return False
     if parsed.path.count("/") > 10:
         return False
@@ -184,13 +241,6 @@ def valid_query(parsed):
 
 
 def generate_report(filename="report.txt"):
-    filtered = Counter(
-        {
-            word: count
-            for word, count in WORD_FREQUENCIES.items()
-            if word not in STOPWORDS
-        }
-    )
     # getting all values to ensure consistency
     longest_url = LONGEST_PAGE["url"]
     longest_wc = LONGEST_PAGE["word_count"]
@@ -202,7 +252,7 @@ def generate_report(filename="report.txt"):
         file.write(f"Longest word count url: {longest_url}\n")
         file.write(f"Longest word count: {longest_wc}\n")
 
-        for word, count in filtered.most_common(50):
+        for word, count in WORD_FREQUENCIES.most_common(50):
             file.write(f"{word}: {count}\n")
 
         file.write(f"Total subdomains: {len(all_subdomains)}\n")
