@@ -49,6 +49,13 @@ def djb2_hash(text: str) -> int:
         hash_value = ((hash_value << 5) + hash_value) + ord(char)
     return hash_value & 0xFFFFFFFFFFFFFFFF
 
+def djb2_hash_bytes(data: bytes) -> int:
+    """DJB2 hash for raw content (exact duplicate detection)."""
+    hash_value = 5381
+    for byte in data:
+        hash_value = ((hash_value << 5) + hash_value) + byte
+    return hash_value & 0xFFFFFFFFFFFFFFFF
+
 
 def compute_simhash(tokens: list[str]) -> int:
     """Compute 64-bit simhash fingerprint with frequency weighting."""
@@ -73,13 +80,12 @@ def hamming_distance(h1: int, h2: int) -> int:
     return bin(h1 ^ h2).count('1')
 
 
-def is_near_duplicate(new_hash: int, threshold: int = 5) -> bool:
+def is_near_duplicate(new_hash: int, threshold: int = 3) -> bool:
     """Check if new_hash is within threshold Hamming distance of any seen hash."""
     for seen_hash in SIMHASHES:
         if hamming_distance(new_hash, seen_hash) <= threshold:
             return True
     return False
-
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -108,23 +114,17 @@ def extract_next_links(url, resp):
     if "text/html" not in c_type:
         return links
 
-    # Parse the content of the response
     html = resp.raw_response.content
+    # Exact duplicate detection on raw content
+    content_hash = djb2_hash_bytes(html)
+    if content_hash in CONTENT_HASHES:
+        return links
+    CONTENT_HASHES.add(content_hash)
+
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text(separator=" ")
     words = [w for w in tokenize(text) if w not in STOPWORDS]
     word_count = len(words)
-
-    if word_count < 100:
-        return links
-    elif word_count < 300 and len(html) > MAX_SIZE:
-        return links
-
-    # Exact duplicate detection
-    content_hash = djb2_hash(text)
-    if content_hash in CONTENT_HASHES:
-        return links  # Skip exact duplicate
-    CONTENT_HASHES.add(content_hash)
 
     # Near-duplicate detection using simhash
     page_simhash = compute_simhash(words)
@@ -171,8 +171,16 @@ def is_valid(url):
             return False
         if (
             "timeline" in parsed.path.lower()
+            or "/events/" in parsed.path.lower()
+            or "tribe" in parsed.path.lower()
+            or "tribe" in parsed.query.lower()
+            or "wp-login" in parsed.path.lower()
+            or "ical" in parsed.path.lower()
+            or "ml/datasets" in parsed.path.lower()
+            or "eppstein/pix" in parsed.path.lower()
             or re.search(r"/\d{4}/\d{2}/\d{2}", parsed.path)
-            or re.search(r"/\d{4}-\d{2}-\d{2}", parsed.path)
+            or re.search(r"/day/\d{4}-\d{2}-\d{2}", parsed.path)
+            or re.search(r"/\d{4}-\d{2}$", parsed.path)
             or re.search(r"date=\d{4}-\d{2}-\d{2}", parsed.query)
         ):
             return False
@@ -230,7 +238,7 @@ def valid_query(parsed):
         return False
     if len(q) > 100:
         return False
-    if parsed.path.count("/") > 10:
+    if parsed.path.count("/") > 15:
         return False
 
     for key in q:
