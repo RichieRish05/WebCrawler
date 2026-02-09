@@ -176,7 +176,7 @@ def is_valid(url):
             or "tribe" in parsed.query.lower()
             or "wp-login" in parsed.path.lower()
             or "ical" in parsed.path.lower()
-            or "ml/datasets" in parsed.path.lower()
+            or "dataset" in parsed.path.lower()
             or "eppstein/pix" in parsed.path.lower()
             or re.search(r"/\d{4}/\d{2}/\d{2}", parsed.path)
             or re.search(r"/day/\d{4}-\d{2}-\d{2}", parsed.path)
