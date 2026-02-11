@@ -232,16 +232,9 @@ def is_near_duplicate(tokens: list[str], threshold: float = 0.95) -> bool:
     - This measures TRUE content similarity, not just structural similarity
     - Result: Jaccard correctly identifies duplicates while avoiding false
       positives from shared site templates
+    
+      Source: https://www.geeksforgeeks.org/data-science/how-to-calculate-jaccard-similarity-in-python/
 
-    Algorithm:
-    1. Create trigrams (3-word sequences) from the token list
-    2. Hash each trigram using DJB2
-    3. Sample ~25% of hashes (those divisible by 4) as a fingerprint (MinHash-like)
-    4. Compare fingerprint against all seen fingerprints using Jaccard similarity
-    5. If similarity >= 0.95, it's a near-duplicate
-
-    The 0.95 threshold is conservative - only flags pages that are 95%+ similar
-    in actual word content, avoiding false positives from template similarity.
     """
     if len(tokens) < 10:
         return False
@@ -308,8 +301,7 @@ def extract_next_links(url, resp):
     6. Statistics tracking (unique pages, word frequencies, longest page)
     7. Link extraction and normalization
 
-    Returns empty list if page should be skipped, otherwise returns
-    list of absolute URLs found on the page.
+    Returns list of urls found on page
     """
     links = []
     if resp is None or resp.status != 200 or resp.raw_response is None:
@@ -371,15 +363,11 @@ def is_valid(url):
     - Must be http/https scheme
     - Must be in allowed domains (ics, cs, informatics, stat .uci.edu)
     - Must not be a known trap pattern (calendars, dates, login pages, etc.)
-    - Must not be a binary/media file extension
-    - Must not have problematic query parameters
-
-    Trap patterns blocked:
-    - Date-based URLs (calendars, events, timelines)
-    - Authentication pages (login, register, auth)
-    - DokuWiki media pages, eppstein/pix (image galleries)
-    - GitLab (infinite repository traversal)
-    - Dataset pages (large files, low text value)
+        - Date-based URLs (calendars, events, timelines)
+        - Authentication pages (login, register, auth)
+        - DokuWiki media pages, eppstein/pix (image galleries)
+        - GitLab (infinite repository traversal)
+        - Dataset pages (large files, low text value)
     """
     allowed_domains = (
         ".ics.uci.edu",
@@ -397,24 +385,39 @@ def is_valid(url):
         if parsed.fragment:
             return False
         if (
+            # Timeline pages often generate infinite variations
             "timeline" in parsed.path.lower()
+            # ML datasets are large files with low text content
             or "ml/datasets" in parsed.path.lower()
+            # Event listing pages (may filter too aggressively - see wics.ics.uci.edu)
             or "/events/" in parsed.path.lower()
+            # Tribe calendar plugin creates infinite date-based URLs
             or "tribe" in parsed.path.lower()
             or "tribe" in parsed.query.lower()
+            # WordPress login pages - no crawlable content
             or "wp-login" in parsed.path.lower()
+            # Authentication pages - require login, no public content
             or "/auth/" in parsed.path.lower()
             or "/login" in parsed.path.lower()
             or "/register" in parsed.path.lower()
+            # iCal exports - calendar file downloads, not HTML
             or "ical" in parsed.path.lower()
             or "ical" in parsed.query.lower()
+            # Eppstein's photo gallery - thousands of image pages
             or "eppstein/pix" in parsed.path.lower()
+            # DokuWiki pages - often have revision/action traps
             or "doku.php" in parsed.path.lower()
+            # Dataset pages - large binary files, low text value
             or "dataset" in parsed.path.lower()
+            # SLD (Styled Layer Descriptor) - GIS/mapping files
             or "sld" in parsed.path.lower()
+            # Date patterns: /2024/01/15 - calendar trap
             or re.search(r"/\d{4}/\d{2}/\d{2}", parsed.path)
+            # Date patterns: /day/2024-01-15 - calendar trap
             or re.search(r"/day/\d{4}-\d{2}-\d{2}", parsed.path)
+            # Date patterns: /2024-01 - monthly archive trap
             or re.search(r"/\d{4}-\d{2}$", parsed.path)
+            # Date query param: ?date=2024-01-15 - calendar trap
             or re.search(r"date=\d{4}-\d{2}-\d{2}", parsed.query)
         ):
             return False
