@@ -389,8 +389,6 @@ def is_valid(url):
             "timeline" in parsed.path.lower()
             # ML datasets are large files with low text content
             or "ml/datasets" in parsed.path.lower()
-            # Event listing pages (may filter too aggressively - see wics.ics.uci.edu)
-            or "/events/" in parsed.path.lower()
             # Tribe calendar plugin creates infinite date-based URLs
             or "tribe" in parsed.path.lower()
             or "tribe" in parsed.query.lower()
@@ -405,8 +403,6 @@ def is_valid(url):
             or "ical" in parsed.query.lower()
             # Eppstein's photo gallery - thousands of image pages
             or "eppstein/pix" in parsed.path.lower()
-            # DokuWiki pages - often have revision/action traps
-            or "doku.php" in parsed.path.lower()
             # Dataset pages - large binary files, low text value
             or "dataset" in parsed.path.lower()
             # SLD (Styled Layer Descriptor) - GIS/mapping files
